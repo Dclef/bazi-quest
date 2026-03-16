@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="查看八字调查问卷的公共统计结果，包括口诀命中率、八字分组、维度分析等，看看大家的八字都测出了什么。">
+  <meta name="keywords" content="八字调查统计,八字口诀命中率,八字分组,盲派八字统计">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="八字调查问卷">
+  <meta property="og:title" content="大家的八字都测出了什么？| 八字调查统计">
+  <meta property="og:description" content="公开查看八字调查问卷的统计结果，看看哪些老口诀在真实样本中更容易命中。">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>大家的八字都测出了什么？| 八字调查统计</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-logo-icon">卦</span>
+      <span class="nav-logo-text">八字调查问卷</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">首页</a></li>
+      <li><a href="quiz.html">测试</a></li>
+      <li><a href="stats.html" class="active">📊 统计</a></li>
+    </ul>
+  </nav>
+
+  <section class="stats-section">
+    <div class="container">
+      <!-- Page Header -->
+      <div class="stats-page-header">
+        <h1 class="stats-page-title">📊 八字调查统计</h1>
+        <p class="stats-page-desc">看看大家的八字，究竟和老口诀能对上多少</p>
+      </div>
+
+      <!-- Loading State -->
+      <div id="statsLoading" class="stats-loading">
+        <div class="stats-loading-spinner"></div>
+        <p>正在加载统计数据...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div id="statsEmpty" style="display: none; text-align: center; padding: 80px 0;">
+        <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+        <h2 style="margin-bottom: 12px;">暂无统计数据</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 24px;">成为第一位参与者，贡献您的数据！</p>
+        <a href="quiz.html" class="btn btn-primary">🔮 开始测试</a>
+      </div>
+
+      <!-- Stats Content -->
+      <div id="statsContent" style="display: none;">
+
+        <!-- Overview Cards -->
+        <div class="stats-overview" id="statsOverview"></div>
+
+        <!-- Search Box -->
+        <div class="card" style="margin: 32px 0;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+            <span style="font-size: 1.2rem;">🔍</span>
+            <span style="font-weight: 700;">按八字搜索</span>
+          </div>
+          <div class="search-box">
+            <input type="text" class="form-input" id="baziSearch" placeholder="输入四柱，如：甲子-乙丑-丙寅-丁卯">
+            <button class="btn btn-primary" id="btnSearch" style="flex-shrink: 0;">搜索</button>
+          </div>
+          <div id="searchResult" style="margin-top: 16px;"></div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="stats-tabs">
+          <button class="stats-tab active" data-tab="ranking">🎯 口诀排行</button>
+          <button class="stats-tab" data-tab="groups">👥 八字分组</button>
+          <button class="stats-tab" data-tab="dimensions">📋 维度分析</button>
+        </div>
+
+        <!-- Tab: Formula Ranking -->
+        <div class="stats-tab-content active" id="tabRanking">
+          <div class="formula-table" id="formulaTable"></div>
+        </div>
+
+        <!-- Tab: Bazi Groups -->
+        <div class="stats-tab-content" id="tabGroups">
+          <div id="baziGroups"></div>
+        </div>
+
+        <!-- Tab: Dimensions -->
+        <div class="stats-tab-content" id="tabDimensions">
+          <div id="dimAnalysis"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <p>八字调查问卷 · 基于传统口诀与盲派资料整理 · 数据仅用于研究与统计</p>
+    </div>
+  </footer>
+
+  <script src="js/site-config.js"></script>
+  <script src="js/questions.js"></script>
+  <script src="js/datastore.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/stats-page.js"></script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="查看你的八字调查结果，了解你的八字与古法口诀在学业、事业、婚姻、财运、性格等维度上的匹配情况。">
+  <meta name="keywords" content="八字调查结果,八字测试结果,八字口诀匹配,盲派八字结果">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="八字调查问卷">
+  <meta property="og:title" content="你的八字调查结果">
+  <meta property="og:description" content="看看你的八字与古法口诀在多个维度上究竟匹配了多少。">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>你的八字调查结果 | 八字调查问卷</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-logo-icon">卦</span>
+      <span class="nav-logo-text">八字调查问卷</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">首页</a></li>
+      <li><a href="quiz.html">重新测试</a></li>
+      <li><a href="stats.html">📊 统计</a></li>
+    </ul>
+  </nav>
+
+  <section class="result-section">
+    <div class="container">
+      <!-- No data fallback -->
+      <div id="noData" style="display: none; text-align: center; padding: 80px 0;">
+        <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+        <h2 style="margin-bottom: 12px;">暂无测试数据</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 24px;">请先完成问卷测试</p>
+        <a href="quiz.html" class="btn btn-primary">去测试 →</a>
+      </div>
+
+      <!-- Result content -->
+      <div id="resultContent" style="display: none;">
+        <!-- Header -->
+        <div class="result-header">
+          <div style="font-size: 1.2rem; color: var(--text-secondary); margin-bottom: 8px;">综合吻合指数</div>
+          <div class="result-score" id="totalScore">0</div>
+          <div class="result-score-label">/ 100</div>
+        </div>
+
+        <!-- Community Summary Banner -->
+        <div class="community-banner" id="communityBanner" style="display: none;">
+          <div class="community-banner-inner">
+            <span class="community-icon">👥</span>
+            <span class="community-text" id="communityText">正在加载社区数据...</span>
+          </div>
+        </div>
+
+        <!-- Similarity Summary -->
+        <div class="card" id="similarityPanel" style="display: none; margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <span style="font-size: 1.5rem;">🤝</span>
+            <span style="font-size: 1.1rem; font-weight: 700;">有多少人和你相似</span>
+          </div>
+          <p id="similarityIntro" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;"></p>
+          <div id="similarityContent"></div>
+        </div>
+
+        <!-- Bazi Summary -->
+        <div class="card" style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <span style="font-size: 1.5rem;">🔮</span>
+            <span style="font-size: 1.1rem; font-weight: 700;">您的八字概要</span>
+          </div>
+          <div class="bazi-display" id="resultBazi"></div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+            <div><strong style="color: var(--gold);">格局：</strong><span id="rPattern">—</span></div>
+            <div><strong style="color: var(--gold);">日主：</strong><span id="rDayMaster">—</span></div>
+            <div><strong style="color: var(--gold);">身强弱：</strong><span id="rStrength">—</span></div>
+          </div>
+        </div>
+
+        <!-- Same Bazi Comparison -->
+        <div class="card compare-panel" id="comparePanel" style="display: none; margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <span style="font-size: 1.5rem;">🔄</span>
+            <span style="font-size: 1.1rem; font-weight: 700;">同八字对比</span>
+            <span class="community-badge" id="sameBaziCount">0人</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+            以下是与您相同八字的其他人的填写情况对比
+          </p>
+          <div id="compareContent"></div>
+        </div>
+
+        <!-- Formula Hit Summary -->
+        <div class="card" id="formulaHitCard" style="display: none; margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <span style="font-size: 1.5rem;">🎯</span>
+            <span style="font-size: 1.1rem; font-weight: 700;">口诀命中摘要</span>
+          </div>
+          <div class="formula-hit-grid" id="formulaHitGrid"></div>
+        </div>
+
+        <!-- Radar Chart -->
+        <div class="radar-wrap">
+          <canvas id="radarCanvas" width="420" height="420"></canvas>
+        </div>
+
+        <!-- Dimension Cards -->
+        <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 8px;">📋 分维度详情</h2>
+        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 20px;">每维度得分为该维度下所有题目的平均分（1-5分制换算为百分制）</p>
+        <div class="dimension-grid" id="dimGrid"></div>
+
+        <!-- Action -->
+        <div style="text-align: center; margin-top: 48px;">
+          <div class="btn-group">
+            <a href="quiz.html" class="btn btn-secondary">🔄 重新测试</a>
+            <a href="stats.html" class="btn btn-primary">📊 查看公共统计</a>
+            <button class="btn btn-secondary" id="btnExport">📥 导出数据</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <p>八字调查问卷 · 基于传统口诀与盲派资料整理 · 数据仅用于研究与统计</p>
+    </div>
+  </footer>
+
+  <script src="js/site-config.js"></script>
+  <script src="js/questions.js"></script>
+  <script src="js/datastore.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/bazi-renderer.js"></script>
+  <script src="js/result.js"></script>
+</body>
+</html>

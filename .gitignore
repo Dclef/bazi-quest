@@ -1,0 +1,10 @@
+# 排除不需要上传的本地资料文件夹
+/八字/
+/盲派八字/
+
+# 其他常见忽略项
+.DS_Store
+node_modules/
+dist/
+.env
+cloudfunctions/
