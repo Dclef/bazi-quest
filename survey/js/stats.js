@@ -36,6 +36,23 @@ const StatsEngine = {
   },
 
   /**
+   * 使用预聚合题目统计直接计算命中率
+   * @returns {{ hitCount: number, total: number, rate: number }}
+   */
+  formulaHitRateFromQuestionStats(questionStats, questionId) {
+    const dist = questionStats && questionStats[questionId]
+      ? questionStats[questionId]
+      : { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, total: 0 };
+    const hitCount = (Number(dist[4]) || 0) + (Number(dist[5]) || 0);
+    const total = Number(dist.total) || 0;
+    return {
+      hitCount,
+      total,
+      rate: total > 0 ? Math.round((hitCount / total) * 100) : 0
+    };
+  },
+
+  /**
    * 某维度在一组记录中的平均得分 (0-100)
    */
   dimensionAverage(records, dimension) {
@@ -66,12 +83,45 @@ const StatsEngine = {
   },
 
   /**
+   * 使用预聚合题目统计计算全部口诀平均命中率
+   */
+  overallMatchRateFromQuestionStats(questionStats) {
+    if (!questionStats || typeof questionStats !== 'object') return 0;
+    let totalRate = 0;
+    let counted = 0;
+    QUESTIONS.forEach(q => {
+      const hit = this.formulaHitRateFromQuestionStats(questionStats, q.id);
+      if (hit.total === 0) return;
+      totalRate += hit.rate;
+      counted++;
+    });
+    return counted > 0 ? Math.round(totalRate / counted) : 0;
+  },
+
+  /**
    * 获取所有口诀、按命中率排序
    * @returns {Array<{question, hitRate, hitCount, total}>}
    */
   formulaRanking(records) {
     return QUESTIONS.map(q => {
       const hit = this.formulaHitRate(records, q.id);
+      return {
+        question: q,
+        hitRate: hit.rate,
+        hitCount: hit.hitCount,
+        total: hit.total
+      };
+    }).filter(item => item.total > 0)
+      .sort((a, b) => b.hitRate - a.hitRate);
+  },
+
+  /**
+   * 使用预聚合题目统计生成口诀排行
+   * @returns {Array<{question, hitRate, hitCount, total}>}
+   */
+  formulaRankingFromQuestionStats(questionStats) {
+    return QUESTIONS.map(q => {
+      const hit = this.formulaHitRateFromQuestionStats(questionStats, q.id);
       return {
         question: q,
         hitRate: hit.rate,

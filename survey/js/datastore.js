@@ -98,7 +98,8 @@ const DataStore = {
       const qs = questionList.filter(q => q.dimension === dk);
       if (qs.length === 0) return;
 
-      let total = 0, count = 0;
+      let total = 0;
+      let count = 0;
       qs.forEach(q => {
         if (answers[q.id] !== undefined) {
           total += answers[q.id];
@@ -217,17 +218,32 @@ const DataStore = {
 
   /**
    * 按八字 key 查询同八字记录
+   * 默认保持旧行为，直接返回全部记录。
    */
-  async getByBazi(baziKey) {
+  async getByBazi(baziKey, options = {}) {
+    const key = String(baziKey || '').trim();
+    if (!key) {
+      return [];
+    }
+
+    if (options.page || options.pageSize) {
+      const pageData = await this.getByBaziPage(
+        key,
+        options.page || 1,
+        options.pageSize || 50
+      );
+      return options.includeMeta ? pageData : pageData.records;
+    }
+
     const localRecords = this._getLocalRecords()
-      .filter(record => record.baziKey === baziKey);
+      .filter(record => record.baziKey === key);
     const apiConfig = this._getApiConfig();
     if (!apiConfig.enabled) {
       return this._sortRecordsByTime(localRecords);
     }
 
     try {
-      const response = await this._request(`/bazi?key=${encodeURIComponent(baziKey)}`);
+      const response = await this._request(`/bazi?key=${encodeURIComponent(key)}`);
       const records = Array.isArray(response && response.records) ? response.records : [];
       return this._sortRecordsByTime(records.map(record => this._normalizeRecord(record)));
     } catch (err) {
@@ -237,55 +253,140 @@ const DataStore = {
   },
 
   /**
+   * 按八字 key 分页查询记录
+   */
+  async getByBaziPage(baziKey, page = 1, pageSize = 50) {
+    const key = String(baziKey || '').trim();
+    const safePage = this._normalizePositiveInt(page, 1, { max: 1000000 });
+    const safePageSize = this._normalizePositiveInt(pageSize, 50, { max: 100 });
+    const localPage = this._buildBaziRecordsPageFromRecords(
+      this._getLocalRecords(),
+      key,
+      safePage,
+      safePageSize
+    );
+
+    if (!key) {
+      return localPage;
+    }
+
+    const apiConfig = this._getApiConfig();
+    if (!apiConfig.enabled) {
+      return localPage;
+    }
+
+    try {
+      const response = await this._request(
+        `/bazi?key=${encodeURIComponent(key)}&page=${safePage}&pageSize=${safePageSize}`
+      );
+      return this._normalizeBaziRecordsPage(response, key, safePage, safePageSize);
+    } catch (err) {
+      console.error('HTTP API 八字分页查询失败:', err);
+      return localPage;
+    }
+  },
+
+  /**
+   * 获取统计摘要
+   */
+  async getStatsSummary() {
+    const localSummary = this._buildStatsSummary(this._getLocalRecords());
+    const apiConfig = this._getApiConfig();
+    if (!apiConfig.enabled) {
+      return localSummary;
+    }
+
+    try {
+      const response = await this._request('/stats/summary');
+      return this._normalizeStatsSummary(response);
+    } catch (err) {
+      console.error('HTTP API 统计摘要失败:', err);
+      return localSummary;
+    }
+  },
+
+  /**
+   * 获取八字分组分页列表
+   */
+  async getBaziGroupPage(page = 1, pageSize = 12) {
+    const safePage = this._normalizePositiveInt(page, 1, { max: 1000000 });
+    const safePageSize = this._normalizePositiveInt(pageSize, 12, { max: 50 });
+    const localPage = this._buildBaziGroupPageFromRecords(
+      this._getLocalRecords(),
+      safePage,
+      safePageSize
+    );
+    const apiConfig = this._getApiConfig();
+    if (!apiConfig.enabled) {
+      return localPage;
+    }
+
+    try {
+      const response = await this._request(
+        `/stats/groups?page=${safePage}&pageSize=${safePageSize}`
+      );
+      return this._normalizeBaziGroupPage(response, safePage, safePageSize);
+    } catch (err) {
+      console.error('HTTP API 分组分页失败:', err);
+      return localPage;
+    }
+  },
+
+  /**
+   * 获取单个八字分组的聚合详情
+   */
+  async getBaziGroupDetail(baziKey) {
+    const key = String(baziKey || '').trim();
+    const localDetail = this._buildBaziGroupDetailFromRecords(
+      this._getLocalRecords(),
+      key
+    );
+    if (!key) {
+      return localDetail;
+    }
+
+    const apiConfig = this._getApiConfig();
+    if (!apiConfig.enabled) {
+      return localDetail;
+    }
+
+    try {
+      const response = await this._request(
+        `/stats/group-detail?key=${encodeURIComponent(key)}`
+      );
+      return this._normalizeBaziGroupDetail(response, key);
+    } catch (err) {
+      console.error('HTTP API 分组详情失败:', err);
+      return localDetail;
+    }
+  },
+
+  /**
    * 获取全局统计摘要（带缓存）
+   * 结果页仍保留全量记录统计，避免改动现有对比逻辑。
    */
   async getGlobalStats() {
-    // Check cache
     const cached = this._getCache();
     if (cached) return cached;
 
     try {
       const records = await this.getAll();
+      const summary = this._buildStatsSummary(records);
       const stats = {
-        totalCount: records.length,
+        totalCount: summary.totalCount,
         baziGroups: {},
-        questionStats: {},
-        dimAverages: {},
+        questionStats: summary.questionStats,
+        dimAverages: summary.dimAverages,
         updatedAt: Date.now()
       };
 
-      // 按八字分组
-      records.forEach(r => {
-        if (!stats.baziGroups[r.baziKey]) {
-          stats.baziGroups[r.baziKey] = { count: 0, records: [] };
+      records.forEach(record => {
+        if (!record.baziKey) return;
+        if (!stats.baziGroups[record.baziKey]) {
+          stats.baziGroups[record.baziKey] = { count: 0, records: [] };
         }
-        stats.baziGroups[r.baziKey].count++;
-        stats.baziGroups[r.baziKey].records.push(r);
-      });
-
-      // 各题统计
-      QUESTIONS.forEach(q => {
-        const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, total: 0 };
-        records.forEach(r => {
-          if (r.answers && r.answers[q.id] !== undefined) {
-            dist[r.answers[q.id]]++;
-            dist.total++;
-          }
-        });
-        stats.questionStats[q.id] = dist;
-      });
-
-      // 各维度均分
-      const dimKeys = Object.keys(DIMENSIONS);
-      dimKeys.forEach(dk => {
-        let sum = 0, cnt = 0;
-        records.forEach(r => {
-          if (r.dimScores && r.dimScores[dk] !== undefined) {
-            sum += r.dimScores[dk];
-            cnt++;
-          }
-        });
-        stats.dimAverages[dk] = cnt > 0 ? Math.round(sum / cnt) : 0;
+        stats.baziGroups[record.baziKey].count++;
+        stats.baziGroups[record.baziKey].records.push(record);
       });
 
       this._setCache(stats);
@@ -306,12 +407,8 @@ const DataStore = {
     }
 
     try {
-      const response = await this._request('/stats');
-      if (response && typeof response.totalCount === 'number') {
-        return response.totalCount;
-      }
-      const records = Array.isArray(response && response.records) ? response.records : [];
-      return records.length;
+      const response = await this._request('/stats/summary');
+      return Number(response && response.totalCount) || 0;
     } catch (err) {
       console.warn('HTTP API 统计总数失败，已退回本地统计:', err);
       return this._getLocalRecords().length;
@@ -341,14 +438,289 @@ const DataStore = {
       ...record,
       id: record.id || record.submitId || '',
       submitId: record.submitId || record.id || '',
+      baziKey: record.baziKey || '',
+      questionIds: Array.isArray(record.questionIds) ? record.questionIds : [],
+      bazi: record.bazi && typeof record.bazi === 'object' ? record.bazi : {},
+      answers: record.answers && typeof record.answers === 'object' ? record.answers : {},
+      dimScores: record.dimScores && typeof record.dimScores === 'object' ? record.dimScores : {},
       timestamp: this._getTimestampValue(record.timestamp) || 0
     };
+  },
+
+  _normalizeStatsSummary(summary) {
+    const questionStats = summary && typeof summary.questionStats === 'object'
+      ? summary.questionStats
+      : {};
+    const dimAverages = summary && typeof summary.dimAverages === 'object'
+      ? summary.dimAverages
+      : {};
+
+    return {
+      totalCount: Number(summary && summary.totalCount) || 0,
+      baziGroupCount: Number(summary && summary.baziGroupCount) || 0,
+      questionStats,
+      dimAverages,
+      overallHit: Number(summary && summary.overallHit) || this._calcOverallHit(questionStats),
+      updatedAt: this._getTimestampValue(summary && summary.updatedAt) || Date.now()
+    };
+  },
+
+  _normalizeBaziGroupPage(payload, fallbackPage, fallbackPageSize) {
+    const groups = Array.isArray(payload && payload.groups)
+      ? payload.groups.map(group => ({
+          baziKey: String(group && group.baziKey || '').trim(),
+          count: Number(group && group.count) || 0,
+          avgMatchRate: Number(group && group.avgMatchRate) || 0
+        }))
+      : [];
+    const pageSize = Number(payload && payload.pageSize) || fallbackPageSize;
+    const totalCount = Number(payload && payload.totalCount) || 0;
+    const totalPages = Number(payload && payload.totalPages)
+      || (totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0);
+    const page = Number(payload && payload.page)
+      || (totalPages > 0 ? Math.min(fallbackPage, totalPages) : fallbackPage);
+
+    return {
+      page,
+      pageSize,
+      totalCount,
+      totalPages,
+      groups,
+      updatedAt: this._getTimestampValue(payload && payload.updatedAt) || Date.now()
+    };
+  },
+
+  _normalizeBaziGroupDetail(payload, baziKey) {
+    const key = String(payload && payload.baziKey || baziKey || '').trim();
+    const questionStats = payload && typeof payload.questionStats === 'object'
+      ? payload.questionStats
+      : {};
+    const dimAverages = payload && typeof payload.dimAverages === 'object'
+      ? payload.dimAverages
+      : {};
+
+    return {
+      baziKey: key,
+      totalCount: Number(payload && payload.totalCount) || 0,
+      avgMatchRate: Number(payload && payload.avgMatchRate) || this._calcOverallHit(questionStats),
+      questionStats,
+      dimAverages,
+      updatedAt: this._getTimestampValue(payload && payload.updatedAt) || Date.now()
+    };
+  },
+
+  _normalizeBaziRecordsPage(payload, baziKey, fallbackPage, fallbackPageSize) {
+    const records = Array.isArray(payload && payload.records)
+      ? payload.records.map(record => this._normalizeRecord(record))
+      : [];
+    const totalCount = Number(payload && payload.totalCount) || records.length;
+    const pageSize = Number(payload && payload.pageSize) || fallbackPageSize;
+    const totalPages = Number(payload && payload.totalPages)
+      || (totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0);
+    const page = Number(payload && payload.page)
+      || (totalPages > 0 ? Math.min(fallbackPage, totalPages) : fallbackPage);
+
+    return {
+      baziKey: String(payload && payload.baziKey || baziKey || '').trim(),
+      totalCount,
+      page,
+      pageSize,
+      totalPages,
+      records
+    };
+  },
+
+  _buildStatsSummary(records) {
+    const normalizedRecords = this._sortRecordsByTime(
+      (records || []).map(record => this._normalizeRecord(record))
+    );
+    const questionStats = this._buildQuestionStats(normalizedRecords);
+    const dimAverages = this._buildDimAverages(normalizedRecords);
+    const baziKeys = new Set(
+      normalizedRecords
+        .map(record => record.baziKey)
+        .filter(Boolean)
+    );
+
+    return {
+      totalCount: normalizedRecords.length,
+      baziGroupCount: baziKeys.size,
+      questionStats,
+      dimAverages,
+      overallHit: this._calcOverallHit(questionStats),
+      updatedAt: Date.now()
+    };
+  },
+
+  _buildQuestionStats(records) {
+    const questionStats = {};
+
+    (records || []).forEach(record => {
+      const answers = record && typeof record.answers === 'object' ? record.answers : {};
+      Object.entries(answers).forEach(([questionId, rawValue]) => {
+        const value = Number(rawValue);
+        if (!Number.isInteger(value) || value < 1 || value > 5) {
+          return;
+        }
+        if (!questionStats[questionId]) {
+          questionStats[questionId] = this._createEmptyQuestionDistribution();
+        }
+        questionStats[questionId][value] += 1;
+        questionStats[questionId].total += 1;
+      });
+    });
+
+    return questionStats;
+  },
+
+  _buildDimAverages(records) {
+    const totals = {};
+    const counts = {};
+
+    (records || []).forEach(record => {
+      const dimScores = record && typeof record.dimScores === 'object' ? record.dimScores : {};
+      Object.entries(dimScores).forEach(([dimKey, rawValue]) => {
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) {
+          return;
+        }
+        totals[dimKey] = (totals[dimKey] || 0) + value;
+        counts[dimKey] = (counts[dimKey] || 0) + 1;
+      });
+    });
+
+    const dimAverages = {};
+    Object.keys(totals).forEach(dimKey => {
+      dimAverages[dimKey] = counts[dimKey] > 0
+        ? Math.round(totals[dimKey] / counts[dimKey])
+        : 0;
+    });
+
+    return dimAverages;
+  },
+
+  _calcOverallHit(questionStats) {
+    let totalRate = 0;
+    let counted = 0;
+
+    Object.values(questionStats || {}).forEach(dist => {
+      const total = Number(dist && dist.total) || 0;
+      if (total <= 0) {
+        return;
+      }
+      const hitCount = (Number(dist[4]) || 0) + (Number(dist[5]) || 0);
+      totalRate += Math.round((hitCount / total) * 100);
+      counted++;
+    });
+
+    return counted > 0 ? Math.round(totalRate / counted) : 0;
+  },
+
+  _buildBaziGroupPageFromRecords(records, page, pageSize) {
+    const groups = {};
+
+    this._sortRecordsByTime(records).forEach(record => {
+      const normalized = this._normalizeRecord(record);
+      if (!normalized.baziKey) return;
+
+      if (!groups[normalized.baziKey]) {
+        groups[normalized.baziKey] = {
+          baziKey: normalized.baziKey,
+          count: 0,
+          latestTimestamp: 0,
+          records: []
+        };
+      }
+
+      groups[normalized.baziKey].count++;
+      groups[normalized.baziKey].records.push(normalized);
+      groups[normalized.baziKey].latestTimestamp = Math.max(
+        groups[normalized.baziKey].latestTimestamp,
+        this._getTimestampValue(normalized.timestamp)
+      );
+    });
+
+    const list = Object.values(groups)
+      .map(group => {
+        const detail = this._buildBaziGroupDetailFromRecords(group.records, group.baziKey);
+        return {
+          baziKey: group.baziKey,
+          count: group.count,
+          avgMatchRate: detail.avgMatchRate,
+          latestTimestamp: group.latestTimestamp
+        };
+      })
+      .sort((a, b) => b.count - a.count || b.latestTimestamp - a.latestTimestamp);
+
+    const totalCount = list.length;
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
+    const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+    const offset = (safePage - 1) * pageSize;
+
+    return {
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages,
+      groups: list.slice(offset, offset + pageSize).map(({ latestTimestamp, ...group }) => group),
+      updatedAt: Date.now()
+    };
+  },
+
+  _buildBaziGroupDetailFromRecords(records, baziKey) {
+    const key = String(baziKey || '').trim();
+    const matchedRecords = this._sortRecordsByTime(records)
+      .map(record => this._normalizeRecord(record))
+      .filter(record => record.baziKey === key);
+    const summary = this._buildStatsSummary(matchedRecords);
+
+    return {
+      baziKey: key,
+      totalCount: matchedRecords.length,
+      avgMatchRate: summary.overallHit,
+      questionStats: summary.questionStats,
+      dimAverages: summary.dimAverages,
+      updatedAt: Date.now()
+    };
+  },
+
+  _buildBaziRecordsPageFromRecords(records, baziKey, page, pageSize) {
+    const key = String(baziKey || '').trim();
+    const matchedRecords = this._sortRecordsByTime(records)
+      .map(record => this._normalizeRecord(record))
+      .filter(record => record.baziKey === key);
+    const totalCount = matchedRecords.length;
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
+    const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+    const offset = (safePage - 1) * pageSize;
+
+    return {
+      baziKey: key,
+      totalCount,
+      page: safePage,
+      pageSize,
+      totalPages,
+      records: matchedRecords.slice(offset, offset + pageSize)
+    };
+  },
+
+  _createEmptyQuestionDistribution() {
+    return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, total: 0 };
+  },
+
+  _normalizePositiveInt(value, fallback, options = {}) {
+    const { min = 1, max = 100 } = options;
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed) || parsed < min) {
+      return fallback;
+    }
+    return Math.min(parsed, max);
   },
 
   _serializePillars(pillars) {
     const result = {};
     ['year', 'month', 'day', 'hour'].forEach(pos => {
-      const p = pillars[pos];
+      const p = pillars[pos] || {};
       result[pos] = {
         gan: p.gan,
         zhi: p.zhi,
@@ -356,10 +728,10 @@ const DataStore = {
         wuXing: p.wuXing,
         naYin: p.naYin,
         shiShenGan: p.shiShenGan,
-        shiShenZhi: p.shiShenZhi || [],
+        shiShenZhi: Array.isArray(p.shiShenZhi) ? p.shiShenZhi : [],
         diShi: p.diShi,
-        hideGan: (p.hideGan || []).map ? p.hideGan : [],
-        shenSha: p.shenSha || []
+        hideGan: Array.isArray(p.hideGan) ? p.hideGan : [],
+        shenSha: Array.isArray(p.shenSha) ? p.shenSha : []
       };
     });
     return result;
@@ -412,7 +784,7 @@ const DataStore = {
     try {
       const raw = localStorage.getItem(this.LOCAL_FALLBACK_KEY);
       const records = raw ? JSON.parse(raw) : [];
-      return Array.isArray(records) ? records : [];
+      return Array.isArray(records) ? records.map(record => this._normalizeRecord(record)) : [];
     } catch {
       return [];
     }
@@ -453,13 +825,17 @@ const DataStore = {
       const cached = JSON.parse(raw);
       if (Date.now() - cached.updatedAt > this.CACHE_TTL) return null;
       return cached;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   },
 
   _setCache(stats) {
     try {
       localStorage.setItem(this.CACHE_KEY, JSON.stringify(stats));
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   },
 
   _clearCache() {
