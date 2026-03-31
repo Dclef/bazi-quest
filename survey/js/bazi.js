@@ -5,22 +5,32 @@
  */
 
 const BaziCalculator = {
+  DEFAULT_TIMEZONE_OFFSET_HOURS: 8,
+  DEFAULT_CENTRAL_MERIDIAN: 120,
+
   /**
    * 根据出生信息计算八字
-   * @param {number} year  - 公历年
-   * @param {number} month - 公历月
-   * @param {number} day   - 公历日
-   * @param {number} hour  - 小时 (0-23)
-   * @param {number} minute - 分钟
-   * @param {number} gender - 1=男, 0=女
+   * 支持：
+   * 1. 旧签名：calculate(year, month, day, hour, minute, gender)
+   * 2. 新签名：calculate({ birthDateTime, gender, birthAddress, longitude, latitude, useDaylightSaving, useTrueSolarTime, useZiHourSplit })
    * @returns {Object} 八字信息对象
    */
-  calculate(year, month, day, hour, minute, gender) {
-    const solar = Solar.fromDate(new Date(year, month - 1, day, hour, minute, 0));
+  calculate(input, month, day, hour, minute, gender) {
+    const normalizedInput = this.normalizeInput(input, month, day, hour, minute, gender);
+    const timeProfile = this.buildTimeProfile(normalizedInput);
+    const calcTime = timeProfile.calculationTime;
+    const solar = Solar.fromYmdHms(
+      calcTime.year,
+      calcTime.month,
+      calcTime.day,
+      calcTime.hour,
+      calcTime.minute,
+      0
+    );
     const lunar = solar.getLunar();
     const eightChar = lunar.getEightChar();
+    eightChar.setSect(timeProfile.sect);
 
-    // Basic pillars
     const pillars = {
       year: {
         gan: eightChar.getYearGan(),
@@ -72,57 +82,39 @@ const BaziCalculator = {
       }
     };
 
-    // Calculate 自坐 (Self-sitting DiShi - stem's life stage on its own branch)
     ['year', 'month', 'day', 'hour'].forEach(pos => {
-        try {
-           pillars[pos].selfSitting = lunar.getEightChar().getDiShi(pillars[pos].zhi) || '';
-        } catch(e) {
-           pillars[pos].selfSitting = '';
-        }
-        
-        // ShenSha (神煞) place holder - Lunar library supports some, we'll extract them later if needed or leave empty array for UI
-        pillars[pos].shenSha = []; 
+      try {
+        pillars[pos].selfSitting = eightChar.getDiShi(pillars[pos].zhi) || '';
+      } catch (error) {
+        pillars[pos].selfSitting = '';
+      }
+      pillars[pos].shenSha = [];
     });
 
-    // 提取神煞 (从lunar对象中提取，简化处理)
     try {
-        pillars.year.shenSha = lunar.getYearPositionShenSha ? lunar.getYearPositionShenSha() : ['太极贵人'];
-        pillars.month.shenSha = lunar.getMonthPositionShenSha ? lunar.getMonthPositionShenSha() : ['月德贵人'];
-        pillars.day.shenSha = lunar.getDayPositionShenSha ? lunar.getDayPositionShenSha() : ['天乙贵人'];
-        pillars.hour.shenSha = lunar.getTimePositionShenSha ? lunar.getTimePositionShenSha() : ['将星'];
-    } catch(e) {
-        // Ignored
+      pillars.year.shenSha = lunar.getYearPositionShenSha ? lunar.getYearPositionShenSha() : ['太极贵人'];
+      pillars.month.shenSha = lunar.getMonthPositionShenSha ? lunar.getMonthPositionShenSha() : ['月德贵人'];
+      pillars.day.shenSha = lunar.getDayPositionShenSha ? lunar.getDayPositionShenSha() : ['天乙贵人'];
+      pillars.hour.shenSha = lunar.getTimePositionShenSha ? lunar.getTimePositionShenSha() : ['将星'];
+    } catch (error) {
+      // ignore
     }
 
-    // 日主信息
     const dayMaster = eightChar.getDayGan();
     const dayMasterWuXing = this.getGanWuXing(dayMaster);
-
-    // 十神统计
     const shiShenStats = this.countShiShen(pillars);
-
-    // 月令格局
     const monthZhiMainShiShen = pillars.month.shiShenZhi[0] || '';
     const pattern = this.determinePattern(monthZhiMainShiShen);
-
-    // 五行统计
     const wuXingStats = this.countWuXing(pillars);
-
-    // 地支关系分析
     const zhiList = [pillars.year.zhi, pillars.month.zhi, pillars.day.zhi, pillars.hour.zhi];
     const zhiRelations = this.analyzeZhiRelations(zhiList);
-
-    // 天干关系分析 (PC layout requires stem notes)
     const ganList = [pillars.year.gan, pillars.month.gan, pillars.day.gan, pillars.hour.gan];
     const ganRelations = this.analyzeGanRelations(ganList);
-
-    // 身强身弱判断
     const strength = this.judgeStrength(pillars, dayMaster, dayMasterWuXing, wuXingStats, shiShenStats);
 
-    // 大运
     let daYunList = [];
     try {
-      const yun = eightChar.getYun(gender);
+      const yun = eightChar.getYun(normalizedInput.gender, timeProfile.sect);
       const daYunArr = yun.getDaYun();
       daYunList = daYunArr.map((dy, i) => ({
         index: i,
@@ -135,13 +127,19 @@ const BaziCalculator = {
     }
 
     return {
-      solar: { year, month, day, hour, minute },
+      solar: { ...calcTime },
+      solarInput: { ...timeProfile.civilTime },
       lunar: {
         year: lunar.getYear(),
         month: lunar.getMonth(),
-        day: lunar.getDay()
+        day: lunar.getDay(),
+        yearInGanZhi: lunar.getYearInGanZhiExact(),
+        monthInChinese: lunar.getMonthInChinese ? lunar.getMonthInChinese() : '',
+        dayInChinese: lunar.getDayInChinese ? lunar.getDayInChinese() : ''
       },
-      gender,
+      gender: normalizedInput.gender,
+      birthInput: normalizedInput,
+      timeProfile,
       pillars,
       dayMaster,
       dayMasterWuXing,
@@ -153,6 +151,185 @@ const BaziCalculator = {
       strength,
       daYun: daYunList
     };
+  },
+
+  normalizeInput(input, month, day, hour, minute, gender) {
+    if (typeof input === 'number') {
+      return {
+        civilTime: {
+          year: input,
+          month,
+          day,
+          hour,
+          minute: Number.isFinite(minute) ? minute : 0
+        },
+        gender: Number(gender),
+        birthAddress: '',
+        longitude: null,
+        latitude: null,
+        useDaylightSaving: false,
+        useTrueSolarTime: false,
+        useZiHourSplit: false,
+        timezoneOffsetHours: this.DEFAULT_TIMEZONE_OFFSET_HOURS,
+        locationSource: 'unknown'
+      };
+    }
+
+    const payload = input && typeof input === 'object' ? input : {};
+    return {
+      civilTime: payload.civilTime || null,
+      birthDateTime: String(payload.birthDateTime || '').trim(),
+      gender: Number(payload.gender),
+      birthAddress: String(payload.birthAddress || '').trim(),
+      longitude: this._normalizeCoordinate(payload.longitude, -180, 180),
+      latitude: this._normalizeCoordinate(payload.latitude, -90, 90),
+      useDaylightSaving: Boolean(payload.useDaylightSaving),
+      useTrueSolarTime: Boolean(payload.useTrueSolarTime),
+      useZiHourSplit: Boolean(payload.useZiHourSplit),
+      timezoneOffsetHours: Number.isFinite(Number(payload.timezoneOffsetHours))
+        ? Number(payload.timezoneOffsetHours)
+        : this.DEFAULT_TIMEZONE_OFFSET_HOURS,
+      locationSource: String(payload.locationSource || '').trim() || 'unknown'
+    };
+  },
+
+  buildTimeProfile(input) {
+    const civilTime = input.civilTime || this._parseDateTimeInput(input.birthDateTime);
+    if (!civilTime) {
+      throw new Error('请填写完整且有效的出生时间。');
+    }
+
+    const currentYear = new Date().getFullYear();
+    if (civilTime.year < 1900 || civilTime.year > currentYear) {
+      throw new Error(`出生年份超出范围：1900-${currentYear}。`);
+    }
+
+    const civilDate = this._partsToUtcDate(civilTime);
+    const daylightSavingMinutes = input.useDaylightSaving ? -60 : 0;
+    const standardDate = this._shiftUtcDateByMinutes(civilDate, daylightSavingMinutes);
+    const standardTime = this._utcDateToParts(standardDate);
+
+    const timezoneOffsetHours = Number.isFinite(input.timezoneOffsetHours)
+      ? input.timezoneOffsetHours
+      : this.DEFAULT_TIMEZONE_OFFSET_HOURS;
+    const timezoneMeridian = timezoneOffsetHours * 15;
+
+    let longitudeCorrectionMinutes = 0;
+    let equationOfTimeMinutes = 0;
+    let trueSolarCorrectionMinutes = 0;
+    let calculationDate = standardDate;
+
+    if (input.useTrueSolarTime) {
+      if (!Number.isFinite(input.longitude)) {
+        throw new Error('启用真太阳时时，请填写经度或输入可匹配到坐标的出生地址。');
+      }
+
+      longitudeCorrectionMinutes = (input.longitude - timezoneMeridian) * 4;
+      equationOfTimeMinutes = this._calculateEquationOfTimeMinutes(standardTime);
+      trueSolarCorrectionMinutes = longitudeCorrectionMinutes + equationOfTimeMinutes;
+      calculationDate = this._shiftUtcDateByMinutes(standardDate, trueSolarCorrectionMinutes);
+    }
+
+    const calculationTime = this._utcDateToParts(calculationDate);
+    const location = {
+      address: input.birthAddress || '',
+      longitude: Number.isFinite(input.longitude) ? input.longitude : null,
+      latitude: Number.isFinite(input.latitude) ? input.latitude : null,
+      source: input.locationSource || (Number.isFinite(input.longitude) ? 'manual' : 'unknown')
+    };
+
+    return {
+      civilTime,
+      standardTime,
+      trueSolarTime: input.useTrueSolarTime ? calculationTime : null,
+      calculationTime,
+      calculationMode: input.useTrueSolarTime ? 'trueSolar' : 'standard',
+      useDaylightSaving: Boolean(input.useDaylightSaving),
+      useTrueSolarTime: Boolean(input.useTrueSolarTime),
+      useZiHourSplit: Boolean(input.useZiHourSplit),
+      sect: input.useZiHourSplit ? 1 : 2,
+      sectLabel: input.useZiHourSplit
+        ? '子初换日（23:00-23:59 按次日）'
+        : '子正换日（00:00 后换日）',
+      timezoneOffsetHours,
+      timezoneLabel: this._formatTimezoneLabel(timezoneOffsetHours),
+      timezoneMeridian,
+      location,
+      correctionMinutes: {
+        daylightSaving: daylightSavingMinutes,
+        longitude: input.useTrueSolarTime ? longitudeCorrectionMinutes : 0,
+        equationOfTime: input.useTrueSolarTime ? equationOfTimeMinutes : 0,
+        trueSolar: input.useTrueSolarTime ? trueSolarCorrectionMinutes : 0,
+        total: daylightSavingMinutes + (input.useTrueSolarTime ? trueSolarCorrectionMinutes : 0)
+      }
+    };
+  },
+
+  _parseDateTimeInput(value) {
+    const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return null;
+
+    const parts = {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+      hour: Number(match[4]),
+      minute: Number(match[5])
+    };
+
+    const date = this._partsToUtcDate(parts);
+    const normalized = this._utcDateToParts(date);
+    const isValid = Object.keys(parts).every(key => parts[key] === normalized[key]);
+    return isValid ? parts : null;
+  },
+
+  _partsToUtcDate(parts) {
+    return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0));
+  },
+
+  _utcDateToParts(date) {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes()
+    };
+  },
+
+  _shiftUtcDateByMinutes(date, minutes) {
+    return new Date(date.getTime() + Math.round(minutes * 60 * 1000));
+  },
+
+  _normalizeCoordinate(value, min, max) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < min || num > max) {
+      return null;
+    }
+    return num;
+  },
+
+  _formatTimezoneLabel(offsetHours) {
+    const sign = offsetHours >= 0 ? '+' : '-';
+    const totalMinutes = Math.round(Math.abs(offsetHours) * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `UTC${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  },
+
+  _calculateEquationOfTimeMinutes(parts) {
+    const start = Date.UTC(parts.year, 0, 0);
+    const current = Date.UTC(parts.year, parts.month - 1, parts.day);
+    const dayOfYear = Math.floor((current - start) / 86400000);
+    const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + ((parts.hour - 12) / 24) + (parts.minute / 1440));
+
+    return 229.18 * (
+      0.000075
+      + 0.001868 * Math.cos(gamma)
+      - 0.032077 * Math.sin(gamma)
+      - 0.014615 * Math.cos(2 * gamma)
+      - 0.040849 * Math.sin(2 * gamma)
+    );
   },
 
   /**

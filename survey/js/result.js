@@ -1,6 +1,5 @@
 /**
- * 结果页逻辑 — 增强版
- * 个人得分 + 社区统计百分比 + 同八字对比 + 口诀命中摘要
+ * 结果页逻辑
  */
 (function () {
   'use strict';
@@ -48,6 +47,7 @@
       document.getElementById('resultBazi').parentNode.insertBefore(sdContainer, document.getElementById('resultBazi').nextSibling);
     }
     sdContainer.innerHTML = BaziRenderer.renderSmartDiagram(data.bazi);
+    document.getElementById('resultBirthMeta').innerHTML = BaziRenderer.renderBirthMeta(data.bazi);
 
     document.getElementById('rPattern').textContent = data.bazi.pattern || '—';
     document.getElementById('rDayMaster').textContent = `${data.bazi.dayMaster}${data.bazi.dayMasterWuXing}`;
@@ -250,19 +250,16 @@
       // Get global stats
       const stats = await DataStore.getGlobalStats();
 
-      if (stats.totalCount === 0) {
-        document.getElementById('communityText').textContent = '暂无社区数据，您是第一位参与者！';
+      const baziTypeCount = Object.keys(stats.baziGroups || {}).length;
+
+      if (stats.totalCount === 0 || baziTypeCount === 0) {
+        document.getElementById('communityText').textContent = '暂无公共验证数据';
         return;
       }
 
-      // Update banner
       document.getElementById('communityText').textContent =
-        `已有 ${stats.totalCount} 人参与测试 · 覆盖 ${Object.keys(stats.baziGroups).length} 种八字组合`;
+        `当前已覆盖 ${baziTypeCount} 种八字组合`;
 
-      const allRecords = Object.values(stats.baziGroups).flatMap(group => group.records || []);
-      renderSimilarityPanel(allRecords);
-
-      // Update each question with community percentage
       activeQuestions.forEach(q => {
         const slot = document.getElementById(`cstat_${q.id}`);
         if (!slot) return;
@@ -279,14 +276,12 @@
 
         slot.innerHTML = `
           <span class="community-badge" style="background: ${levelInfo.bg}; color: ${levelInfo.color}; border: 1px solid ${levelInfo.color}30;">
-            📊 ${hitRate}% 认为符合 (${qStats.total}人)
+            📊 ${hitRate}% 认为符合
           </span>`;
       });
 
-      // Formula Hit Summary Card
       renderFormulaHitSummary(stats);
 
-      // Same Bazi Comparison
       if (data.baziKey) {
         const sameBaziRecords = await DataStore.getByBazi(data.baziKey);
         if (sameBaziRecords.length > 1) {
@@ -295,7 +290,7 @@
       }
     } catch (err) {
       console.error('加载社区数据失败:', err);
-      document.getElementById('communityText').textContent = '社区数据加载失败，显示个人结果';
+      document.getElementById('communityText').textContent = '公共验证数据加载失败，当前仅显示个人结果';
     }
   }
 
@@ -355,54 +350,6 @@
     grid.innerHTML = html;
   }
 
-  function renderSimilarityPanel(records) {
-    const panel = document.getElementById('similarityPanel');
-    const intro = document.getElementById('similarityIntro');
-    const content = document.getElementById('similarityContent');
-    const activeQuestionIds = activeQuestions.map(q => q.id);
-
-    if (!panel || !intro || !content || activeQuestionIds.length === 0 || !Array.isArray(records) || records.length === 0) {
-      return;
-    }
-
-    const minOverlap = Math.max(4, Math.min(8, Math.ceil(activeQuestionIds.length * 0.25)));
-    const comparisons = records
-      .map(record => compareAnswerSimilarity(data.answers, record.answers || {}, activeQuestionIds))
-      .filter(item => item.overlapCount >= minOverlap)
-      .sort((a, b) => b.similarity - a.similarity || b.overlapCount - a.overlapCount);
-
-    if (comparisons.length === 0) return;
-
-    const highCount = comparisons.filter(item => item.similarity >= 80).length;
-    const mediumCount = comparisons.filter(item => item.similarity >= 65 && item.similarity < 80).length;
-    const best = comparisons[0];
-    const highRate = Math.round((highCount / comparisons.length) * 100);
-
-    panel.style.display = 'block';
-    intro.textContent = `基于社区中 ${comparisons.length} 份可比较回答计算，需至少重叠 ${minOverlap} 题；统计口径包含你刚提交的这份回答。`;
-    content.innerHTML = `
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
-        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.15); border-radius: 14px; padding: 18px;">
-          <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">高度相似</div>
-          <div style="font-size: 2rem; font-weight: 800; color: var(--primary); line-height: 1;">${highCount}</div>
-          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px;">相似度 ≥ 80%</div>
-        </div>
-        <div style="background: rgba(46, 204, 113, 0.08); border: 1px solid rgba(46, 204, 113, 0.15); border-radius: 14px; padding: 18px;">
-          <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">中度相似</div>
-          <div style="font-size: 2rem; font-weight: 800; color: #2ecc71; line-height: 1;">${mediumCount}</div>
-          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px;">相似度 65% - 79%</div>
-        </div>
-        <div style="background: rgba(243, 156, 18, 0.08); border: 1px solid rgba(243, 156, 18, 0.15); border-radius: 14px; padding: 18px;">
-          <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">最高相似度</div>
-          <div style="font-size: 2rem; font-weight: 800; color: #f39c12; line-height: 1;">${best.similarity}%</div>
-          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px;">基于 ${best.overlapCount} 题重叠回答</div>
-        </div>
-      </div>
-      <div style="margin-top: 16px; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.7;">
-        社区中约 <strong style="color: var(--primary);">${highRate}%</strong> 的可比较回答，和你的整体答题风格较接近。
-      </div>`;
-  }
-
   function compareAnswerSimilarity(baseAnswers, otherAnswers, questionIds) {
     let overlapCount = 0;
     let exactCount = 0;
@@ -431,9 +378,7 @@
     const content = document.getElementById('compareContent');
 
     panel.style.display = 'block';
-    document.getElementById('sameBaziCount').textContent = `${records.length}人`;
 
-    // Show dimension score comparison
     let html = '<div class="compare-grid">';
 
     activeDimKeys.forEach((dk, idx) => {

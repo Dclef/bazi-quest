@@ -1,63 +1,287 @@
 /**
- * 问卷流转逻辑
+ * 问卷流程
  */
 (function () {
   'use strict';
 
-  // State
   let baziResult = null;
   let answers = {};
   let currentDimIdx = 0;
   let isSubmitting = false;
   let activeQuestions = QUESTIONS.slice();
   let activeDimKeys = Object.keys(DIMENSIONS);
+  let coordSource = 'unknown';
+  let selectedBirthplace = null;
+  let searchResults = [];
 
-  // DOM
   const stepBirth = document.getElementById('stepBirth');
   const stepBazi = document.getElementById('stepBazi');
   const stepQuestions = document.getElementById('stepQuestions');
   const progressWrap = document.getElementById('progressWrap');
+  const birthDateTimeInput = document.getElementById('birthDateTime');
+  const birthAddressInput = document.getElementById('birthAddress');
+  const birthLongitudeInput = document.getElementById('birthLongitude');
+  const birthLatitudeInput = document.getElementById('birthLatitude');
+  const birthAddressHint = document.getElementById('birthAddressHint');
+  const birthPreview = document.getElementById('birthPreview');
+  const birthAddressSuggest = document.getElementById('birthAddressSuggest');
+  const timezoneBaseLabel = document.getElementById('timezoneBaseLabel');
+  const timezoneBaseHint = document.getElementById('timezoneBaseHint');
 
-  // ===== Step 1: Birth Info =====
+  hydrateLocationDatalist();
+  bindBirthFormEvents();
+
   document.getElementById('btnCalculate').addEventListener('click', () => {
-    const year = parseInt(document.getElementById('birthYear').value);
-    const month = parseInt(document.getElementById('birthMonth').value);
-    const day = parseInt(document.getElementById('birthDay').value);
-    const hour = parseInt(document.getElementById('birthHour').value);
     const genderEl = document.querySelector('input[name="gender"]:checked');
     const errEl = document.getElementById('birthError');
 
-    if (!year || !month || !day || isNaN(hour) || !genderEl) {
-      errEl.textContent = '请完整填写所有出生信息';
+    if (!birthDateTimeInput.value || !genderEl) {
+      errEl.textContent = '请完整填写出生时间与性别。';
       errEl.style.color = 'var(--danger)';
       errEl.style.display = 'block';
       return;
     }
-    if (year < 1920 || year > 2025) {
-      errEl.textContent = '出生年份超出范围（1920-2025）';
-      errEl.style.color = 'var(--danger)';
-      errEl.style.display = 'block';
-      return;
-    }
-    errEl.style.display = 'none';
 
     try {
-      baziResult = BaziCalculator.calculate(year, month, day, hour, 0, parseInt(genderEl.value));
+      const formState = getBirthFormState();
+      baziResult = BaziCalculator.calculate({
+        ...formState,
+        gender: parseInt(genderEl.value, 10)
+      });
+      errEl.style.display = 'none';
       prepareQuestionSet();
       renderBaziDisplay();
       showStep('bazi');
-    } catch (e) {
-      errEl.textContent = '排盘计算出错: ' + e.message;
+    } catch (error) {
+      errEl.textContent = '排盘计算出错：' + error.message;
       errEl.style.color = 'var(--danger)';
       errEl.style.display = 'block';
     }
   });
 
-  // ===== Step 2: Confirm Bazi =====
+  document.getElementById('btnBackBirth').addEventListener('click', () => showStep('birth'));
+  document.getElementById('btnStartQuiz').addEventListener('click', () => {
+    if (!baziResult || activeQuestions.length === 0) {
+      const errEl = document.getElementById('birthError');
+      errEl.textContent = '当前八字暂无适配题目，请更换样本或补充题库。';
+      errEl.style.color = 'var(--danger)';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    currentDimIdx = 0;
+    renderDimension();
+    showStep('questions');
+    progressWrap.style.display = 'block';
+  });
+
+  function hydrateLocationDatalist() {
+    const datalist = document.getElementById('locationPresets');
+    const data = BirthplaceService.getData();
+    const options = [...data.domesticFlat, ...data.overseasFlat]
+      .slice(0, 800)
+      .map(item => `<option value="${item.label}"></option>`)
+      .join('');
+    datalist.innerHTML = options;
+  }
+
+  function bindBirthFormEvents() {
+    [
+      birthDateTimeInput,
+      birthLongitudeInput,
+      birthLatitudeInput,
+      document.getElementById('useDaylightSaving'),
+      document.getElementById('useTrueSolarTime'),
+      document.getElementById('useZiHourSplit')
+    ].forEach(el => {
+      el.addEventListener('input', handleBirthFormChange);
+      el.addEventListener('change', handleBirthFormChange);
+    });
+
+    document.querySelectorAll('input[name="gender"]').forEach(el => {
+      el.addEventListener('change', handleBirthFormChange);
+    });
+
+    birthAddressInput.addEventListener('input', handleAddressInput);
+    birthAddressInput.addEventListener('focus', handleAddressInput);
+    birthAddressInput.addEventListener('blur', () => {
+      window.setTimeout(hideAddressSuggestions, 150);
+    });
+
+    birthAddressSuggest.addEventListener('mousedown', event => {
+      const option = event.target.closest('[data-birthplace-id]');
+      if (!option) return;
+      event.preventDefault();
+      const item = searchResults.find(entry => entry.id === option.dataset.birthplaceId);
+      if (item) {
+        applyBirthplace(item);
+      }
+    });
+
+    document.addEventListener('click', event => {
+      if (event.target === birthAddressInput || birthAddressSuggest.contains(event.target)) {
+        return;
+      }
+      hideAddressSuggestions();
+    });
+
+    birthLongitudeInput.addEventListener('input', () => {
+      coordSource = 'manual';
+      handleBirthFormChange();
+    });
+
+    birthLatitudeInput.addEventListener('input', () => {
+      coordSource = 'manual';
+      handleBirthFormChange();
+    });
+
+    updateBirthplaceDerivedState();
+    renderBirthPreview();
+  }
+
+  function handleAddressInput() {
+    updateBirthplaceDerivedState();
+    renderAddressSuggestions();
+    renderBirthPreview();
+  }
+
+  function updateBirthplaceDerivedState() {
+    const exact = BirthplaceService.getByLabel(birthAddressInput.value.trim());
+    if (exact) {
+      selectedBirthplace = exact;
+      if (coordSource !== 'manual') {
+        syncCoordinatesFromSelection(exact);
+      }
+    } else if (selectedBirthplace && selectedBirthplace.label !== birthAddressInput.value.trim()) {
+      selectedBirthplace = null;
+      if (coordSource === 'dataset') {
+        coordSource = 'unknown';
+      }
+    }
+
+    updateLocationDerivedInfo();
+  }
+
+  function renderAddressSuggestions() {
+    const query = birthAddressInput.value.trim();
+    if (!query) {
+      hideAddressSuggestions();
+      return;
+    }
+
+    searchResults = BirthplaceService.search(query, { limit: 10 });
+    if (searchResults.length === 0) {
+      birthAddressSuggest.innerHTML = '<div class="search-suggest-empty">未找到相关地区，可手动填写经纬度。</div>';
+      birthAddressSuggest.style.display = 'block';
+      return;
+    }
+
+    birthAddressSuggest.innerHTML = searchResults.map(item => `
+      <button type="button" class="search-suggest-item" data-birthplace-id="${item.id}">
+        <span class="search-suggest-main">${item.label}</span>
+        <span class="search-suggest-meta">${BirthplaceService.getTimezoneLabel(item.timezoneOffsetHours)}</span>
+      </button>
+    `).join('');
+    birthAddressSuggest.style.display = 'block';
+  }
+
+  function hideAddressSuggestions() {
+    birthAddressSuggest.style.display = 'none';
+  }
+
+  function applyBirthplace(item) {
+    selectedBirthplace = item;
+    birthAddressInput.value = item.label;
+    coordSource = 'dataset';
+    syncCoordinatesFromSelection(item);
+    updateLocationDerivedInfo();
+    hideAddressSuggestions();
+    renderBirthPreview();
+  }
+
+  function syncCoordinatesFromSelection(item) {
+    birthLongitudeInput.value = Number.isFinite(item.longitude) ? Number(item.longitude).toFixed(4) : '';
+    birthLatitudeInput.value = Number.isFinite(item.latitude) ? Number(item.latitude).toFixed(4) : '';
+  }
+
+  function updateLocationDerivedInfo() {
+    const location = selectedBirthplace;
+    const timezoneOffsetHours = location && Number.isFinite(location.timezoneOffsetHours)
+      ? location.timezoneOffsetHours
+      : 8;
+
+    timezoneBaseLabel.textContent = BirthplaceService.getTimezoneLabel(timezoneOffsetHours);
+
+    if (location) {
+      const coordText = Number.isFinite(location.latitude)
+        ? `${BirthplaceService.formatLongitude(location.longitude)} / ${BirthplaceService.formatLatitude(location.latitude)}`
+        : BirthplaceService.formatLongitude(location.longitude);
+      birthAddressHint.textContent = `已匹配出生地：${location.label} · 坐标 ${coordText}`;
+      timezoneBaseHint.textContent = location.type === 'overseas'
+        ? '海外地区按所选城市时区处理；真太阳时仍按经度校正。'
+        : '中国地区默认按东八区标准时处理；勾选真太阳时后会再按经度校正。';
+    } else if (birthAddressInput.value.trim()) {
+      birthAddressHint.textContent = '当前地址未命中出生地库，可继续搜索或手动填写经纬度。';
+      timezoneBaseHint.textContent = '未识别到出生地时，默认按东八区标准时处理。';
+    } else {
+      birthAddressHint.textContent = '支持全国区县、港澳台及常见海外城市搜索；也可以手动填写坐标。';
+      timezoneBaseHint.textContent = '当前会根据所选出生地自动带出时区；中国地区默认按东八区标准时处理。';
+    }
+  }
+
+  function getBirthFormState() {
+    const timezoneOffsetHours = selectedBirthplace && Number.isFinite(selectedBirthplace.timezoneOffsetHours)
+      ? Number(selectedBirthplace.timezoneOffsetHours)
+      : 8;
+
+    return {
+      birthDateTime: birthDateTimeInput.value,
+      birthAddress: birthAddressInput.value.trim(),
+      longitude: birthLongitudeInput.value === '' ? null : Number(birthLongitudeInput.value),
+      latitude: birthLatitudeInput.value === '' ? null : Number(birthLatitudeInput.value),
+      useDaylightSaving: document.getElementById('useDaylightSaving').checked,
+      useTrueSolarTime: document.getElementById('useTrueSolarTime').checked,
+      useZiHourSplit: document.getElementById('useZiHourSplit').checked,
+      timezoneOffsetHours,
+      locationSource: coordSource === 'manual' ? 'manual' : (selectedBirthplace ? 'dataset' : coordSource),
+      regionType: selectedBirthplace ? selectedBirthplace.regionType : 'unknown',
+      birthplace: selectedBirthplace
+    };
+  }
+
+  function renderBirthPreview() {
+    const birthDateTime = birthDateTimeInput.value;
+    if (!birthDateTime) {
+      birthPreview.innerHTML = '<div class="birth-preview-empty">填写出生时间后，这里会显示录入时间、标准时、真太阳时和当前排盘口径。</div>';
+      return;
+    }
+
+    try {
+      const formState = getBirthFormState();
+      const timeProfile = BaziCalculator.buildTimeProfile(formState);
+      const dstSuggestion = BirthplaceService.getChinaDstSuggestion(selectedBirthplace, birthDateTime);
+      const hintHtml = BaziRenderer.renderBirthMeta({ timeProfile, dstSuggestion });
+
+      birthPreview.innerHTML = `
+        <div class="birth-preview-title">当前排盘口径预览</div>
+        <div class="birth-meta-grid">${hintHtml}</div>
+      `;
+    } catch (error) {
+      birthPreview.innerHTML = `
+        <div class="birth-preview-title">当前排盘口径预览</div>
+        <div class="birth-preview-empty">${error.message}</div>
+      `;
+    }
+  }
+
+  function handleBirthFormChange() {
+    updateBirthplaceDerivedState();
+    renderBirthPreview();
+  }
+
   function renderBaziDisplay() {
     document.getElementById('baziDisplay').innerHTML = BaziRenderer.renderTable(baziResult);
-    
-    // Create or update smart diagram container
+
     let sdContainer = document.getElementById('baziSmartDiagram');
     if (!sdContainer) {
       sdContainer = document.createElement('div');
@@ -66,105 +290,97 @@
     }
     sdContainer.innerHTML = BaziRenderer.renderSmartDiagram(baziResult);
 
-    // Extra info (格局/日主/身强弱 are now in the table, but keep the card below for relations)
+    document.getElementById('baziTimeMeta').innerHTML = BaziRenderer.renderBirthMeta(baziResult);
     document.getElementById('baziPattern').textContent = baziResult.pattern;
     document.getElementById('baziDayMaster').textContent = `${baziResult.dayMaster}${baziResult.dayMasterWuXing}`;
     document.getElementById('baziStrength').textContent = `${baziResult.strength.level}（${baziResult.strength.description}）`;
 
-    // Relations text
     const relWrap = document.getElementById('baziRelationsWrap');
     const rels = baziResult.zhiRelations;
     const ganRels = baziResult.ganRelations || {};
     const relItems = [];
+
     Object.keys(rels).forEach(key => {
       if (rels[key].length > 0) {
-        // Map objects back to strings
-        const names = rels[key].map(r => typeof r === 'string' ? r : r.name);
+        const names = rels[key].map(item => typeof item === 'string' ? item : item.name);
         relItems.push(`<strong style="color: var(--primary);">${key}：</strong>${names.join('、')}`);
       }
     });
+
     Object.keys(ganRels).forEach(key => {
       if (ganRels[key].length > 0) {
-        const names = ganRels[key].map(r => typeof r === 'string' ? r : r.name);
+        const names = ganRels[key].map(item => typeof item === 'string' ? item : item.name);
         relItems.push(`<strong style="color: var(--primary);">${key}：</strong>${names.join('、')}`);
       }
     });
+
     relWrap.innerHTML = relItems.length > 0
       ? relItems.join('<br>')
       : '<span style="color: var(--text-muted);">无明显刑冲合害</span>';
   }
 
-  document.getElementById('btnBackBirth').addEventListener('click', () => showStep('birth'));
-  document.getElementById('btnStartQuiz').addEventListener('click', () => {
-    if (!baziResult || activeQuestions.length === 0) {
-      const errEl = document.getElementById('birthError');
-      errEl.textContent = '当前八字暂无适配题目，请更换样本或补充题库';
-      errEl.style.color = 'var(--danger)';
-      errEl.style.display = 'block';
-      return;
-    }
-    currentDimIdx = 0;
-    renderDimension();
-    showStep('questions');
-    progressWrap.style.display = 'block';
-  });
-
   function prepareQuestionSet() {
     activeQuestions = QuestionEngine.getApplicableQuestions(baziResult);
-    activeDimKeys = Object.keys(DIMENSIONS).filter(dk => {
-      return activeQuestions.some(q => q.dimension === dk);
+    activeDimKeys = Object.keys(DIMENSIONS).filter(dimKey => {
+      return activeQuestions.some(question => question.dimension === dimKey);
     });
     currentDimIdx = 0;
   }
 
-  // ===== Step 3: Questions =====
   function renderDimension() {
     const dimKey = activeDimKeys[currentDimIdx];
     const dim = DIMENSIONS[dimKey];
-    const qs = activeQuestions.filter(q => q.dimension === dimKey);
+    const qs = activeQuestions.filter(question => question.dimension === dimKey);
     const container = document.getElementById('questionContainer');
 
-    let html = `<div class="step-title">${dim.icon} ${dim.name}</div>
-                <div class="step-desc">第 ${currentDimIdx + 1} / ${activeDimKeys.length} 维度 · 共 ${qs.length} 题</div>
-                <div class="step-desc">拿不准时可选“一般 / 不确定 / 不适用”</div>`;
+    let html = `
+      <div class="step-title">${dim.icon} ${dim.name}</div>
+      <div class="step-desc">第 ${currentDimIdx + 1} / ${activeDimKeys.length} 维度 · 共 ${qs.length} 题</div>
+      <div class="step-desc">拿不准时可选“一般 / 不确定 / 不适用”。</div>
+    `;
 
-    qs.forEach((q, i) => {
-      const answered = answers[q.id] !== undefined;
+    qs.forEach((question, index) => {
+      const answered = answers[question.id] !== undefined;
       html += `
-        <div class="question-card ${answered ? 'answered' : ''}" id="qcard_${q.id}">
+        <div class="question-card ${answered ? 'answered' : ''}" id="qcard_${question.id}">
           <div class="question-header">
-            <span class="question-num">${i + 1}</span>
+            <span class="question-num">${index + 1}</span>
             <div>
-              <div class="question-text">${q.text}</div>
+              <div class="question-text">${question.text}</div>
             </div>
           </div>
           <div class="likert">
-            ${LIKERT_OPTIONS.map(opt => `
+            ${LIKERT_OPTIONS.map(option => `
               <div class="likert-option">
-                <input type="radio" name="${q.id}" id="${q.id}_${opt.value}" value="${opt.value}"
-                  ${answers[q.id] === opt.value ? 'checked' : ''}>
-                <label for="${q.id}_${opt.value}">${opt.label}</label>
+                <input
+                  type="radio"
+                  name="${question.id}"
+                  id="${question.id}_${option.value}"
+                  value="${option.value}"
+                  ${answers[question.id] === option.value ? 'checked' : ''}
+                >
+                <label for="${question.id}_${option.value}">${option.label}</label>
               </div>
             `).join('')}
           </div>
-        </div>`;
+        </div>
+      `;
     });
 
     container.innerHTML = html;
 
-    // Bind events
-    qs.forEach(q => {
-      LIKERT_OPTIONS.forEach(opt => {
-        const el = document.getElementById(`${q.id}_${opt.value}`);
-        if (el) {
-          el.addEventListener('change', () => {
-            answers[q.id] = parseInt(opt.value, 10);
-            document.getElementById(`qcard_${q.id}`).classList.add('answered');
-            updateProgress();
-          });
-        }
+    qs.forEach(question => {
+      LIKERT_OPTIONS.forEach(option => {
+        const el = document.getElementById(`${question.id}_${option.value}`);
+        if (!el) return;
+        el.addEventListener('change', () => {
+          answers[question.id] = parseInt(option.value, 10);
+          document.getElementById(`qcard_${question.id}`).classList.add('answered');
+          updateProgress();
+        });
       });
     });
+
     updateProgress();
     updateNav();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -172,8 +388,8 @@
 
   function updateProgress() {
     const totalQ = activeQuestions.length || 1;
-    const answered = Object.keys(answers).length;
-    const pct = Math.round((answered / totalQ) * 100);
+    const answeredCount = Object.keys(answers).length;
+    const pct = Math.round((answeredCount / totalQ) * 100);
     document.getElementById('progressPct').textContent = pct + '%';
     document.getElementById('progressFill').style.width = pct + '%';
     document.getElementById('progressDimension').textContent =
@@ -183,18 +399,16 @@
   function updateNav() {
     const info = document.getElementById('quizNavInfo');
     const dimKey = activeDimKeys[currentDimIdx];
-    const dimQs = activeQuestions.filter(q => q.dimension === dimKey);
-    const dimAnswered = dimQs.filter(q => answers[q.id] !== undefined).length;
-    info.textContent = `已答 ${dimAnswered} / ${dimQs.length}`;
+    const dimQuestions = activeQuestions.filter(question => question.dimension === dimKey);
+    const dimAnswered = dimQuestions.filter(question => answers[question.id] !== undefined).length;
+    info.textContent = `已答 ${dimAnswered} / ${dimQuestions.length}`;
 
     document.getElementById('btnPrevDim').style.visibility = currentDimIdx === 0 ? 'hidden' : 'visible';
 
     const nextBtn = document.getElementById('btnNextDim');
-    if (currentDimIdx === activeDimKeys.length - 1) {
-      nextBtn.textContent = '查看结果 →';
-    } else {
-      nextBtn.textContent = '下一维度 →';
-    }
+    nextBtn.textContent = currentDimIdx === activeDimKeys.length - 1
+      ? '查看结果 →'
+      : '下一维度 →';
   }
 
   document.getElementById('btnPrevDim').addEventListener('click', () => {
@@ -208,37 +422,36 @@
   document.getElementById('btnNextDim').addEventListener('click', async () => {
     if (isSubmitting) return;
 
-    // Check if current dimension is fully answered
     const dimKey = activeDimKeys[currentDimIdx];
-    const dimQs = activeQuestions.filter(q => q.dimension === dimKey);
-    const unanswered = dimQs.filter(q => answers[q.id] === undefined);
+    const dimQuestions = activeQuestions.filter(question => question.dimension === dimKey);
+    const unanswered = dimQuestions.filter(question => answers[question.id] === undefined);
 
     if (unanswered.length > 0) {
-      // Highlight unanswered
-      unanswered.forEach(q => {
-        const card = document.getElementById(`qcard_${q.id}`);
-        if (card) {
-          card.style.borderColor = 'rgba(231, 76, 60, 0.5)';
-          card.style.animation = 'pulse 0.5s ease';
-          setTimeout(() => {
-            card.style.borderColor = '';
-            card.style.animation = '';
-          }, 1500);
-        }
+      unanswered.forEach(question => {
+        const card = document.getElementById(`qcard_${question.id}`);
+        if (!card) return;
+        card.style.borderColor = 'rgba(231, 76, 60, 0.5)';
+        card.style.animation = 'pulse 0.5s ease';
+        setTimeout(() => {
+          card.style.borderColor = '';
+          card.style.animation = '';
+        }, 1500);
       });
-      // Scroll to first unanswered
+
       const firstCard = document.getElementById(`qcard_${unanswered[0].id}`);
-      if (firstCard) firstCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (firstCard) {
+        firstCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
     if (currentDimIdx < activeDimKeys.length - 1) {
       currentDimIdx++;
       renderDimension();
-    } else {
-      // All done → save & go to result
-      await saveAndNavigate();
+      return;
     }
+
+    await saveAndNavigate();
   });
 
   async function saveAndNavigate() {
@@ -265,28 +478,28 @@
       submitId,
       timestamp: new Date().toISOString(),
       bazi: baziResult,
-      baziKey: baziKey,
-      questionIds: activeQuestions.map(q => q.id),
-      answers: answers,
-      dimScores: dimScores
+      baziKey,
+      questionIds: activeQuestions.map(question => question.id),
+      answers,
+      dimScores
     };
+
     localStorage.setItem('bazi_survey_data', JSON.stringify(data));
+
     DataStore.queuePendingUpload({
       submitId,
-      baziKey: baziKey,
+      baziKey,
       bazi: baziResult,
-      questionIds: activeQuestions.map(q => q.id),
-      answers: answers,
-      dimScores: dimScores
+      questionIds: activeQuestions.map(question => question.id),
+      answers,
+      dimScores
     });
 
     navInfoEl.textContent = '结果已生成，正在跳转...';
-    birthErrorEl.textContent = '结果已生成，云端数据将在结果页后台同步';
-
+    birthErrorEl.textContent = '结果已生成，云端数据会在结果页后台同步。';
     window.location.href = 'result.html';
   }
 
-  // ===== Step Control =====
   function showStep(step) {
     stepBirth.classList.remove('active');
     stepBazi.classList.remove('active');
@@ -295,12 +508,16 @@
     if (step === 'birth') {
       stepBirth.classList.add('active');
       progressWrap.style.display = 'none';
-    } else if (step === 'bazi') {
+      return;
+    }
+
+    if (step === 'bazi') {
       stepBazi.classList.add('active');
       progressWrap.style.display = 'none';
-    } else if (step === 'questions') {
-      stepQuestions.classList.add('active');
-      progressWrap.style.display = 'block';
+      return;
     }
+
+    stepQuestions.classList.add('active');
+    progressWrap.style.display = 'block';
   }
 })();

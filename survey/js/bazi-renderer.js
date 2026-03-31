@@ -48,6 +48,90 @@ const BaziRenderer = {
     return `<span style="color: ${wxc.color}; font-weight: 500;">${fullName}</span>`;
   },
 
+  formatDateTime(parts) {
+    if (!parts) return '--';
+    const year = String(parts.year || '').padStart(4, '0');
+    const month = String(parts.month || '').padStart(2, '0');
+    const day = String(parts.day || '').padStart(2, '0');
+    const hour = String(parts.hour || 0).padStart(2, '0');
+    const minute = String(parts.minute || 0).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}`;
+  },
+
+  formatOffsetMinutes(minutes) {
+    const value = Number(minutes);
+    if (!Number.isFinite(value)) return '--';
+    const sign = value >= 0 ? '+' : '-';
+    return `${sign}${Math.abs(Math.round(value))} 分钟`;
+  },
+
+  formatCoordinate(value, positiveLabel, negativeLabel) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '--';
+    return `${num >= 0 ? positiveLabel : negativeLabel}${Math.abs(num).toFixed(2)}`;
+  },
+
+  renderBirthMeta(baziData) {
+    const timeProfile = baziData && baziData.timeProfile ? baziData.timeProfile : null;
+    if (!timeProfile) return '';
+
+    const location = timeProfile.location || {};
+    const dstSuggestion = baziData && baziData.dstSuggestion ? baziData.dstSuggestion : null;
+    const dstStatusClass = dstSuggestion && dstSuggestion.status
+      ? `birth-meta-status-${dstSuggestion.status}`
+      : 'birth-meta-status-unknown';
+
+    const items = [
+      {
+        label: '录入时间',
+        value: this.formatDateTime(timeProfile.civilTime),
+        desc: '出生时当地钟表时间'
+      },
+      {
+        label: '标准时',
+        value: this.formatDateTime(timeProfile.standardTime),
+        desc: timeProfile.useDaylightSaving
+          ? `已按夏令时回拨 ${Math.abs(timeProfile.correctionMinutes.daylightSaving)} 分钟`
+          : `基准 ${timeProfile.timezoneLabel}`
+      },
+      {
+        label: '排盘时间',
+        value: this.formatDateTime(timeProfile.calculationTime),
+        desc: timeProfile.useTrueSolarTime
+          ? `真太阳时校正 ${this.formatOffsetMinutes(timeProfile.correctionMinutes.trueSolar)}`
+          : '当前按标准时排盘'
+      },
+      {
+        label: '出生地',
+        value: location.address || '未指定出生地',
+        desc: Number.isFinite(location.longitude)
+          ? `${this.formatCoordinate(location.longitude, '东经', '西经')} / ${this.formatCoordinate(location.latitude, '北纬', '南纬')}`
+          : '未提供经纬度'
+      },
+      {
+        label: '子时换日',
+        value: timeProfile.sectLabel,
+        desc: timeProfile.useZiHourSplit ? '23:00 起按次日' : '00:00 后换日'
+      }
+    ];
+
+    if (dstSuggestion) {
+      items.push({
+        label: '夏令时提示',
+        value: `<span class="birth-meta-status ${dstStatusClass}">${dstSuggestion.status === 'on' ? '建议勾选' : dstSuggestion.status === 'off' ? '通常不勾选' : '请手动确认'}</span>`,
+        desc: dstSuggestion.message
+      });
+    }
+
+    return items.map(item => `
+      <div class="birth-meta-card">
+        <div class="birth-meta-label">${item.label}</div>
+        <div class="birth-meta-value">${item.value}</div>
+        <div class="birth-meta-desc">${item.desc}</div>
+      </div>
+    `).join('');
+  },
+
   renderTable(baziData, options = {}) {
     if (!baziData || !baziData.pillars) return '<p>八字数据无效</p>';
 

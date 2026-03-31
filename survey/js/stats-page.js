@@ -174,14 +174,9 @@
 
     document.getElementById('statsOverview').innerHTML = `
       <div class="stats-ov-card">
-        <div class="stats-ov-icon">👥</div>
-        <div class="stats-ov-value">${summary.totalCount}</div>
-        <div class="stats-ov-label">总提交数</div>
-      </div>
-      <div class="stats-ov-card">
         <div class="stats-ov-icon">🔮</div>
         <div class="stats-ov-value">${summary.baziGroupCount}</div>
-        <div class="stats-ov-label">八字组合</div>
+        <div class="stats-ov-label">八字种类</div>
       </div>
       <div class="stats-ov-card">
         <div class="stats-ov-icon">🎯</div>
@@ -250,8 +245,8 @@
 
     let html = `
       <div class="stats-list-meta">
-        <div class="stats-list-note">按出现人数排序，每次只加载当前页分组；展开卡片时再按需查询详情。</div>
-        <div class="stats-list-count">第 ${pageData.page} / ${Math.max(pageData.totalPages, 1)} 页 · 共 ${pageData.totalCount} 组</div>
+        <div class="stats-list-note">这里只展示已覆盖的八字种类；展开卡片后查看该八字的聚合命中情况。</div>
+        <div class="stats-list-count">第 ${pageData.page} / ${Math.max(pageData.totalPages, 1)} 页</div>
       </div>`;
 
     groups.forEach(group => {
@@ -263,7 +258,6 @@
           <div class="bgc-header" data-action="toggle-group" data-bazi-key="${safeKey}">
             <div class="bgc-bazi">
               <span class="bgc-pillars">${safeKey}</span>
-              <span class="bgc-count">${group.count} 人</span>
             </div>
             <div class="bgc-meta">
               <span class="bgc-match" style="color: ${matchLevel.color};">命中率 ${group.avgMatchRate}%</span>
@@ -314,7 +308,7 @@
 
     let html = `
       <div class="bgc-detail-summary">
-        共 ${detail.totalCount} 份样本 · 平均命中率 ${detail.avgMatchRate}%
+        该八字聚合命中率 ${detail.avgMatchRate}%
       </div>
       <div class="bgc-dim-grid">`;
 
@@ -367,7 +361,6 @@
         <div class="bgc-header" style="cursor: default;">
           <div class="bgc-bazi">
             <span class="bgc-pillars">${safeKey}</span>
-            <span class="bgc-count">${detail.totalCount} 人</span>
           </div>
           <div class="bgc-meta">
             <span class="bgc-match" style="color: ${matchLevel.color};">命中率 ${detail.avgMatchRate}%</span>

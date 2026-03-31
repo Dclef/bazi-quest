@@ -3,20 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="开始你的八字调查问卷。输入出生信息，系统会自动排盘，并按你的八字特征动态匹配口诀题目，测试学业、事业、婚姻、财运等内容。">
-  <meta name="keywords" content="八字调查问卷,八字测试,八字口诀,盲派八字,八字问卷,四柱测试">
+  <meta name="description" content="输入出生信息后自动排盘，并按八字特征动态匹配问卷题目。支持夏令时、真太阳时、子时换日与出生地记录。">
+  <meta name="keywords" content="八字调查问卷,八字测试,真太阳时,夏令时,早晚子时,四柱排盘">
   <meta name="robots" content="index,follow,max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:site_name" content="八字调查问卷">
-  <meta property="og:title" content="开始测试：看看你的八字口诀准不准">
-  <meta property="og:description" content="输入出生信息后自动排盘，系统会按八字动态出题，看看古法口诀与你的人生经历到底有多吻合。">
+  <meta property="og:title" content="开始测试 | 八字调查问卷">
+  <meta property="og:description" content="支持出生地址、真太阳时、夏令时与子时换日校正，先排盘再动态出题。">
   <meta name="twitter:card" content="summary_large_image">
-  <title>开始测试：看看你的八字口诀准不准 | 八字调查问卷</title>
+  <title>开始测试 | 八字调查问卷</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- Navigation -->
   <nav class="nav">
     <a href="index.html" class="nav-logo">
       <span class="nav-logo-icon">八字</span>
@@ -25,15 +24,14 @@
     <ul class="nav-links">
       <li><a href="index.html">首页</a></li>
       <li><a href="quiz.html" class="active">立即测试</a></li>
-      <li><a href="stats.html">📊 统计</a></li>
+      <li><a href="stats.html">统计</a></li>
     </ul>
   </nav>
 
-  <!-- Progress -->
   <div class="container">
     <div class="progress-wrap" id="progressWrap" style="display: none;">
       <div class="progress-header">
-        <span class="progress-label" id="progressDimension">—</span>
+        <span class="progress-label" id="progressDimension">--</span>
         <span class="progress-pct" id="progressPct">0%</span>
       </div>
       <div class="progress-bar">
@@ -42,88 +40,109 @@
     </div>
   </div>
 
-  <!-- Quiz Content -->
   <section class="quiz-section">
     <div class="container">
-
-      <!-- Step 1: Birth Info -->
       <div class="quiz-step active" id="stepBirth">
         <div class="step-title">第一步 · 输入出生信息</div>
-        <div class="step-desc">系统会自动排盘，并按您的八字特征动态匹配题目，避免出现“命局无财却大量问财、无印却反复问印”的情况。</div>
+        <div class="step-desc">
+          排盘前先把时间口径说清楚。这里支持出生地址、夏令时、真太阳时与子时换日，先校正时间，再按八字特征动态出题。
+        </div>
 
-        <div class="card" style="max-width: 600px; margin: 0 auto;">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">出生年份<span class="required">*</span></label>
-              <input type="number" class="form-input" id="birthYear" placeholder="如：1990" min="1920" max="2025">
-            </div>
-            <div class="form-group">
-              <label class="form-label">出生月份<span class="required">*</span></label>
-              <select class="form-select" id="birthMonth">
-                <option value="">请选择</option>
-                <option value="1">1月</option><option value="2">2月</option>
-                <option value="3">3月</option><option value="4">4月</option>
-                <option value="5">5月</option><option value="6">6月</option>
-                <option value="7">7月</option><option value="8">8月</option>
-                <option value="9">9月</option><option value="10">10月</option>
-                <option value="11">11月</option><option value="12">12月</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">出生日期<span class="required">*</span></label>
-              <input type="number" class="form-input" id="birthDay" placeholder="如：15" min="1" max="31">
-            </div>
-            <div class="form-group">
-              <label class="form-label">出生时辰<span class="required">*</span></label>
-              <select class="form-select" id="birthHour">
-                <option value="">请选择</option>
-                <option value="0">子时 (23:00-01:00)</option>
-                <option value="1">丑时 (01:00-03:00)</option>
-                <option value="3">寅时 (03:00-05:00)</option>
-                <option value="5">卯时 (05:00-07:00)</option>
-                <option value="7">辰时 (07:00-09:00)</option>
-                <option value="9">巳时 (09:00-11:00)</option>
-                <option value="11">午时 (11:00-13:00)</option>
-                <option value="13">未时 (13:00-15:00)</option>
-                <option value="15">申时 (15:00-17:00)</option>
-                <option value="17">酉时 (17:00-19:00)</option>
-                <option value="19">戌时 (19:00-21:00)</option>
-                <option value="21">亥时 (21:00-23:00)</option>
-              </select>
-            </div>
-          </div>
+        <div class="card birth-card">
           <div class="form-group">
             <label class="form-label">性别<span class="required">*</span></label>
-            <div style="display: flex; gap: 16px;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary);">
-                <input type="radio" name="gender" value="1"> 男
+            <div class="choice-row choice-row-inline" id="genderControl">
+              <label class="choice-chip">
+                <input type="radio" name="gender" value="1">
+                <span>男</span>
               </label>
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary);">
-                <input type="radio" name="gender" value="0"> 女
+              <label class="choice-chip">
+                <input type="radio" name="gender" value="0">
+                <span>女</span>
               </label>
             </div>
           </div>
+
+          <div class="form-group">
+            <label class="form-label" for="birthDateTime">出生时间<span class="required">*</span></label>
+            <input type="datetime-local" class="form-input" id="birthDateTime" min="1900-01-01T00:00" max="2026-12-31T23:59">
+            <div class="form-help">请按出生时当地钟表时间填写，精确到分钟更稳妥。</div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="birthAddress">出生地址</label>
+              <input type="text" class="form-input" id="birthAddress" list="locationPresets" placeholder="如：北京市朝阳区 / 上海 / 香港 / 台北">
+              <div class="search-suggest" id="birthAddressSuggest" style="display: none;"></div>
+              <div class="form-help" id="birthAddressHint">支持常用城市快速匹配经纬度；也可以直接手动填写坐标。</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">时区基准</label>
+              <div class="readonly-box" id="timezoneBaseLabel">东八区标准时（120°E / 北京时间）</div>
+              <div class="form-help" id="timezoneBaseHint">当前会根据所选出生地自动带出时区；中国地区默认按东八区标准时处理。</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="birthLongitude">经度</label>
+              <input type="number" class="form-input" id="birthLongitude" step="0.0001" min="-180" max="180" placeholder="东经为正，如 116.4074">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="birthLatitude">纬度</label>
+              <input type="number" class="form-input" id="birthLatitude" step="0.0001" min="-90" max="90" placeholder="北纬为正，如 39.9042">
+            </div>
+          </div>
+
+          <div class="toggle-grid">
+            <label class="toggle-card">
+              <input type="checkbox" id="useDaylightSaving">
+              <span class="toggle-card-body">
+                <span class="toggle-card-title">夏令时</span>
+                <span class="toggle-card-desc">若出生记录本身采用夏令时，排盘前先回拨 1 小时。</span>
+              </span>
+            </label>
+            <label class="toggle-card">
+              <input type="checkbox" id="useTrueSolarTime">
+              <span class="toggle-card-body">
+                <span class="toggle-card-title">真太阳时</span>
+                <span class="toggle-card-desc">按经度与均时差校正。未填写经度时无法启用。</span>
+              </span>
+            </label>
+            <label class="toggle-card">
+              <input type="checkbox" id="useZiHourSplit">
+              <span class="toggle-card-body">
+                <span class="toggle-card-title">早晚子时</span>
+                <span class="toggle-card-desc">启用子初换日：23:00-23:59 按次日，00:00-00:59 为早子时。</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="birth-preview" id="birthPreview">
+            <div class="birth-preview-empty">填写出生时间后，这里会显示录入时间、标准时、真太阳时和当前排盘口径。</div>
+          </div>
+
           <div class="btn-group" style="margin-top: 24px;">
             <button class="btn btn-primary" id="btnCalculate" type="button">排盘计算 →</button>
           </div>
           <p id="birthError" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-top: 12px; display: none;"></p>
         </div>
+
+        <datalist id="locationPresets"></datalist>
       </div>
 
-      <!-- Step 2: Confirm Bazi -->
       <div class="quiz-step" id="stepBazi">
         <div class="step-title">第二步 · 确认您的八字</div>
-        <div class="step-desc">以下是根据您的出生信息自动排出的八字四柱，请确认后继续。</div>
+        <div class="step-desc">以下是根据您填写的时间口径自动排出的八字四柱。请先核对排盘时间与出生地，再继续答题。</div>
 
         <div class="bazi-display" id="baziDisplay"></div>
 
         <div class="card" id="baziExtra" style="margin-top: 16px;">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; font-size: 0.85rem; color: var(--text-secondary);">
-            <div><strong style="color: var(--gold);">格局：</strong><span id="baziPattern">—</span></div>
-            <div><strong style="color: var(--gold);">日主：</strong><span id="baziDayMaster">—</span></div>
-            <div><strong style="color: var(--gold);">身强弱：</strong><span id="baziStrength">—</span></div>
+          <div class="birth-meta-grid" id="baziTimeMeta"></div>
+          <div class="summary-meta-grid">
+            <div><strong style="color: var(--gold);">格局：</strong><span id="baziPattern">--</span></div>
+            <div><strong style="color: var(--gold);">日主：</strong><span id="baziDayMaster">--</span></div>
+            <div><strong style="color: var(--gold);">身强弱：</strong><span id="baziStrength">--</span></div>
             <div id="baziRelationsWrap"></div>
           </div>
         </div>
@@ -134,7 +153,6 @@
         </div>
       </div>
 
-      <!-- Step 3: Questions -->
       <div class="quiz-step" id="stepQuestions">
         <div id="questionContainer"></div>
         <div class="quiz-nav">
@@ -143,18 +161,19 @@
           <button class="btn btn-primary" id="btnNextDim">下一维度 →</button>
         </div>
       </div>
-
     </div>
   </section>
 
   <footer class="footer">
     <div class="container">
-      <p>八字调查问卷 · 基于传统口诀与盲派资料整理 · 请按真实经历作答</p>
+      <p>八字调查问卷 · 基于传统口诀与盲派资料整理 · 数据仅用于研究与验证</p>
     </div>
   </footer>
 
   <script src="js/vendor/lunar.js"></script>
   <script src="js/site-config.js"></script>
+  <script src="js/birthplace-data.js"></script>
+  <script src="js/birthplace.js"></script>
   <script src="js/bazi.js"></script>
   <script src="js/questions.js"></script>
   <script src="js/datastore.js"></script>
