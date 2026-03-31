@@ -405,7 +405,7 @@ const QUESTIONS = [
   },
   {
     id: 'mar_05',
-    text: '您属于晚婚（30岁以后结婚；若未到年龄请选一般）',
+    text: '您属于晚婚（28岁以后结婚；若未到年龄请选一般）',
     dimension: 'marriage',
     formula: '财星破印的八字，恋爱不容易成功，典型晚婚',
     baziTag: { tenGod: '财印', condition: 'conflict' }
@@ -714,7 +714,7 @@ QUESTIONS.push(
   },
   {
     id: 'car_15',
-    text: '您在较年轻时就离开家乡，到外地求学或发展',
+    text: '您在较年轻时就离开出生地，到外地求学或发展',
     dimension: 'career',
     formula: '年冲月令，商祖成家；驿马交驰，别土离乡',
     source: '民间江湖盲派命理秘诀·离乡取象',
